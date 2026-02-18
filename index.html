@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, orientation=landscape">
+    <title>PROJECT.OI - Mobile DAW</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="daw-chassis">
+        <header>
+            <div style="display: flex; align-items: center;">
+                <img src="images/logo.png" alt="Logo" style="width: 99.5px; height: auto;">
+                <span style="font-size:10px; opacity:0.7; margin-left: 10px;">sampler&grooveapp v1.0</span>
+            </div>
+            <div class="header-controls">
+                <div class="bpm-control">
+                    <span style="font-size:10px;">BPM:</span>
+                    <input type="number" id="bpm-input" value="120" min="40" max="240">
+                    <div class="bpm-toggle" id="bpm-toggle" onclick="toggleBPM()" title="Metronome ON/OFF"></div>
+                </div>
+            </div>
+        </header>
+
+        <nav>
+            <div class="nav-btn" onclick="setTab('sampler', this)">SAMPLER</div>
+            <div class="nav-btn active" onclick="setTab('sequence', this)">SEQUENCE</div>
+            <div class="nav-btn" onclick="setTab('song', this)">SONG</div>
+            <div class="nav-btn" onclick="setTab('tape', this)">TAPE</div>
+        </nav>
+
+        <main>
+            <!-- SEQUENCE VIEW -->
+            <div id="sequence-view" class="view active">
+                <div class="track-column" id="trackList">
+                    <!-- Sequence Selector -->
+                    <div class="sequence-selector">
+                        <select class="seq-select" id="seq-select" onchange="loadSequence()">
+                            <option value="0">SEQ 01</option>
+                        </select>
+                        <button class="seq-btn" onclick="addNewSequence()" title="New Sequence">+</button>
+                    </div>
+
+                    <!-- Length Selector -->
+                    <div class="length-selector">
+                        <label>LENGTH:</label>
+                        <button class="length-btn" onclick="setLength(2)">2</button>
+                        <button class="length-btn active" onclick="setLength(4)">4</button>
+                        <button class="length-btn" onclick="setLength(8)">8</button>
+                        <button class="length-btn" onclick="setLength(16)">16</button>
+                    </div>
+
+                    <!-- Track List (starts empty) -->
+                    <div id="instrument-list"></div>
+
+                    <div class="add-inst-btn" onclick="showAddInstrumentModal()">+ ADD INSTRUMENT</div>
+                </div>
+
+                <div class="performance-column">
+                    <div class="status-bar">
+                        <div class="lcd" id="seq-lcd">BAR 1:1 | STOP</div>
+                        <div class="transport-controls">
+                            <div class="transport-btn btn-rec" onclick="toggleRec()" title="Record">
+                                <div class="icon-rec"></div>
+                            </div>
+                            <div class="transport-btn btn-play" onclick="togglePlay()" title="Play">
+                                <div class="icon-play"></div>
+                            </div>
+                            <div class="transport-btn btn-stop" onclick="stopPlayback()" title="Stop">
+                                <div class="icon-stop"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Piano Roll Timeline -->
+                    <div class="piano-roll" id="piano-roll">
+                        <div class="piano-roll-grid" id="piano-roll-grid"></div>
+                    </div>
+
+                    <!-- Pads -->
+                    <div class="pad-grid" id="pad-grid"></div>
+                </div>
+            </div>
+
+            <!-- SONG VIEW -->
+            <div id="song-view" class="view">
+                <div class="song-timeline-area" id="songTimeline">
+                    <div style="position: absolute; left: 10px; top: 5px; color: #999; font-size: 10px; pointer-events:none;">SONG ARRANGEMENT ▶</div>
+                </div>
+
+                <div class="pattern-pool-area" id="patternPool">
+                    <!-- Sequences will be populated here -->
+                </div>
+                <div style="text-align: center; font-size: 10px; padding: 2px; background: #bbb;">TAP SEQUENCE TO ADD TO TIMELINE</div>
+            </div>
+
+            <!-- SAMPLER VIEW -->
+            <div id="sampler-view" class="view">
+                <div class="track-column">
+                    <div class="vinyl-container">
+                        <div class="vinyl" id="sampler-vinyl">
+                            <div class="vinyl-label"></div>
+                        </div>
+                        <div class="sampler-vu-container">
+                            <div class="vu-meter">
+                                <div class="vu-bar" id="sampler-vu-bar" style="height: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="sampler-info">
+                        <div class="lcd" id="sampler-lcd">READY TO RECORD</div>
+                        <div class="sampler-controls">
+                            <button class="deck-btn rec" id="sampler-rec-btn" onclick="toggleSamplerRec()">
+                                <div class="icon-rec"></div>
+                                <span>REC</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="performance-column">
+                    <div class="piano-roll" id="sampler-piano-roll">
+                        <canvas id="sampler-waveform"></canvas>
+                    </div>
+                    <div class="pad-grid" id="sampler-pad-grid"></div>
+                </div>
+            </div>
+
+            <!-- TAPE VIEW -->
+            <div id="tape-view" class="view">
+                <div class="tape-deck">
+                    <!-- VU Meters -->
+                    <div class="vu-meter-container">
+                        <div class="vu-meter">
+                            <div class="vu-meter-label">L</div>
+                            <div class="vu-bar left" id="vu-left" style="height: 5px;"></div>
+                        </div>
+                        <div class="vu-meter">
+                            <div class="vu-meter-label">R</div>
+                            <div class="vu-bar right" id="vu-right" style="height: 5px;"></div>
+                        </div>
+                    </div>
+
+                    <div class="cassette">
+                        <div class="cassette-label" id="cassette-label">MASTER TAPE</div>
+                        <div class="spool" id="spool1"></div>
+                        <div class="cassette-window">
+                            <div class="tape-reel"></div>
+                        </div>
+                        <div class="spool" id="spool2"></div>
+                    </div>
+                </div>
+
+                <div class="deck-controls">
+                    <button class="deck-btn" onclick="rewindTape()">
+                        <div class="icon-rew"></div>
+                        <span>REW</span>
+                    </button>
+                    <button class="deck-btn" onclick="stopTape()">
+                        <div class="icon-stop" style="width:10px;height:10px;background:white;"></div>
+                        <span>STOP</span>
+                    </button>
+                    <button class="deck-btn play" id="tape-play-btn" onclick="playTape()">
+                        <div class="icon-play"></div>
+                        <span>PLAY</span>
+                    </button>
+                    <button class="deck-btn rec" id="tape-rec-btn" onclick="recTape()">
+                        <div class="icon-rec"></div>
+                        <span>REC</span>
+                    </button>
+                </div>
+
+                <div class="tape-status" id="tape-status">● READY</div>
+                <button class="download-btn" id="download-btn" onclick="downloadRecording()">⬇ DOWNLOAD MP3</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Instrument Modal -->
+    <div class="modal-overlay" id="add-instrument-modal">
+        <div class="modal">
+            <div class="modal-title">SELECT INSTRUMENT TYPE</div>
+            <button class="modal-btn" onclick="addInstrument('drums')">🥁 DRUMS</button>
+            <button class="modal-btn" onclick="addInstrument('keys')">🎹 KEYS</button>
+            <button class="modal-btn" onclick="addInstrument('sampler')">🎙️ SAMPLER</button>
+            <br><br>
+            <button class="modal-btn secondary" onclick="closeModal('add-instrument-modal')">CANCEL</button>
+        </div>
+    </div>
+
+    <!-- EQ Modal -->
+    <div class="modal-overlay" id="eq-modal">
+        <div class="modal">
+            <div class="modal-title">EQUALIZER - <span id="eq-inst-name"></span></div>
+            <div class="eq-panel">
+                <div class="eq-slider-group">
+                    <label>LOW</label>
+                    <input type="range" id="eq-low" min="-12" max="12" value="0" oninput="updateEQ()">
+                    <span id="eq-low-val">0 dB</span>
+                </div>
+                <div class="eq-slider-group">
+                    <label>MID</label>
+                    <input type="range" id="eq-mid" min="-12" max="12" value="0" oninput="updateEQ()">
+                    <span id="eq-mid-val">0 dB</span>
+                </div>
+                <div class="eq-slider-group">
+                    <label>HIGH</label>
+                    <input type="range" id="eq-high" min="-12" max="12" value="0" oninput="updateEQ()">
+                    <span id="eq-high-val">0 dB</span>
+                </div>
+                <div class="eq-slider-group">
+                    <label>VOLUME</label>
+                    <input type="range" id="eq-vol" min="0" max="100" value="80" oninput="updateEQ()">
+                    <span id="eq-vol-val">80%</span>
+                </div>
+                <div class="eq-slider-group" id="tuning-group" style="display:none;">
+                    <label>TUNING</label>
+                    <input type="range" id="eq-tuning" min="-12" max="12" value="0" oninput="updateEQ()">
+                    <span id="eq-tuning-val">0</span>
+                </div>
+            </div>
+            <br>
+            <button class="modal-btn" onclick="closeModal('eq-modal')">DONE</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script src="soundEngine.js"></script>
+</body>
+</html>
