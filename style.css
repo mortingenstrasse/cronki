@@ -610,17 +610,7 @@
         }
         .tape-status.recording { color: #f00; }
 
-        .download-btn {
-            margin-top: 10px;
-            padding: 8px 20px;
-            background: var(--orange);
-            color: white;
-            border: 2px solid var(--border);
-            font-weight: bold;
-            cursor: pointer;
-            display: none;
-        }
-        .download-btn.visible { display: block; }
+
 
         /* =========================================
            MODALS
@@ -791,4 +781,377 @@
 
 .pad.has-sample {
     border: 2px solid var(--orange);
+}
+
+
+
+/* Sound Library Modal */
+.library-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.library-bank-btn {
+    background: #2a2a2a;
+    color: #ccc;
+    border: 1px solid #444;
+    padding: 5px 10px;
+    font-family: monospace;
+    font-size: 10px;
+    cursor: pointer;
+    border-radius: 3px;
+    letter-spacing: 1px;
+}
+
+.library-bank-btn.active {
+    background: var(--orange);
+    color: #000;
+    border-color: var(--orange);
+}
+
+.library-pads {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin-bottom: 10px;
+    min-height: 80px;
+}
+
+.library-pad {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ccc;
+    font-family: monospace;
+    font-size: 9px;
+    padding: 8px 4px;
+    cursor: pointer;
+    text-align: center;
+    border-radius: 3px;
+    transition: all 0.1s;
+}
+
+.library-pad:hover, .library-pad.preview {
+    background: var(--orange);
+    color: #000;
+    border-color: var(--orange);
+}
+
+.library-inst-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.library-name-input {
+    flex: 1;
+    background: #1a1a1a;
+    color: var(--orange);
+    border: 1px solid #444;
+    padding: 4px 8px;
+    font-family: monospace;
+    font-size: 11px;
+    border-radius: 3px;
+    outline: none;
+}
+
+/* Countdown Display */
+.countdown-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--orange);
+    letter-spacing: 0;
+    transition: all 0.1s;
+}
+.countdown-display.go {
+    color: #0f0;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+
+/* Song File Area */
+.song-file-area {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px;
+    margin-top: 8px;
+    background: #1a1a1a;
+    border: 1px solid var(--orange);
+    border-radius: 6px;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.song-file-icon {
+    font-size: 24px;
+}
+
+.song-file-name {
+    font-family: monospace;
+    font-size: 11px;
+    color: #ccc;
+    letter-spacing: 1px;
+}
+
+.download-btn {
+    margin-top: 0;
+    padding: 10px 20px;
+    background: var(--orange);
+    color: #000;
+    border: none;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    cursor: pointer;
+    border-radius: 4px;
+    width: 100%;
+    box-shadow: 0 0 20px rgba(242, 92, 25, 0.5);
+    animation: pulse-glow 1.5s ease-in-out infinite;
+    transition: transform 0.1s;
+}
+.download-btn:active { transform: scale(0.97); }
+
+@keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 10px rgba(242, 92, 25, 0.4); }
+    50%       { box-shadow: 0 0 25px rgba(242, 92, 25, 0.9); }
+}
+
+/* ---- MENU BUTTON (header) ---- */
+.menu-btn {
+    background: #333;
+    color: #ccc;
+    border: 1px solid #555;
+    font-family: monospace;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    padding: 5px 10px;
+    cursor: pointer;
+    border-radius: 3px;
+    margin-left: 6px;
+    height: 28px;
+    transition: background 0.1s;
+}
+.menu-btn:active { background: #444; }
+
+/* ---- SAVE SONG DECK BUTTON ---- */
+.save-song-btn {
+    background: linear-gradient(180deg, #e86520 0%, #b84800 100%) !important;
+    animation: blink 0.8s infinite;
+    min-width: 50px;
+}
+.save-song-btn span:first-child { font-size: 14px; }
+
+/* ---- MENU MODAL ---- */
+.menu-modal-inner {
+    width: 92%;
+    max-width: 360px;
+    padding: 16px;
+}
+
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.1s;
+    margin-bottom: 2px;
+}
+.menu-item:hover, .menu-item:active { background: #2a2a2a; }
+
+.menu-item-disabled {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
+}
+
+.menu-item-icon { font-size: 20px; flex-shrink: 0; }
+
+.menu-item-label {
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: bold;
+    color: #eee;
+    letter-spacing: 1px;
+}
+
+.menu-item-sub {
+    font-family: monospace;
+    font-size: 10px;
+    color: #777;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+}
+
+.menu-divider {
+    height: 1px;
+    background: #333;
+    margin: 8px 0;
+}
+
+/* ---- TOAST ---- */
+#cronki-toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--orange);
+    color: #000;
+    font-family: monospace;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    padding: 8px 20px;
+    border-radius: 20px;
+    opacity: 0;
+    transition: opacity 0.25s, transform 0.25s;
+    pointer-events: none;
+    z-index: 9999;
+    white-space: nowrap;
+}
+#cronki-toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* ---- OPENING SCREEN ---- */
+#opening-screen {
+    position: fixed;
+    inset: 0;
+    background: #2a2a2a;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    z-index: 99999;
+    overflow: hidden;
+}
+
+.opening-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    padding-top: 0;
+}
+
+.opening-logo {
+    width: 780px;
+    height: 690px;
+    max-width: 100vw;
+    max-height: 55vh;
+    object-fit: contain;
+    display: block;
+}
+
+.opening-version {
+    font-family: monospace;
+    font-size: 13px;
+    color: #aaa;
+    letter-spacing: 2px;
+    margin-top: 10px;
+}
+
+.opening-start-btn {
+    margin-top: 18px;
+    background: #2ecc71;
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    padding: 14px 40px;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(46,204,113,0.5);
+    transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.opening-start-btn:active {
+    transform: scale(0.96);
+    box-shadow: 0 0 8px rgba(46,204,113,0.3);
+}
+
+.opening-tips {
+    font-family: monospace;
+    font-size: 10px;
+    color: #666;
+    margin-top: 18px;
+    padding: 0 20px;
+    text-align: center;
+    letter-spacing: 0.5px;
+}
+
+/* ---- XY PAD ---- */
+.xy-pad-wrapper {
+    flex: 0 0 auto;
+}
+
+.xy-pad {
+    position: relative;
+    width: 100px;
+    height: 88px;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 6px;
+    cursor: crosshair;
+    touch-action: none;
+    overflow: hidden;
+    background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 19px, #2a2a2a 19px, #2a2a2a 20px),
+        repeating-linear-gradient(90deg, transparent, transparent 19px, #2a2a2a 19px, #2a2a2a 20px);
+}
+
+.xy-pad-label {
+    position: absolute;
+    font-family: monospace;
+    font-size: 8px;
+    color: #555;
+    pointer-events: none;
+}
+
+.xy-label-x {
+    bottom: 2px;
+    right: 4px;
+}
+
+.xy-label-y {
+    top: 2px;
+    left: 3px;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+}
+
+.xy-cursor {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--orange);
+    border: 1px solid #fff;
+    transform: translate(-50%, -50%);
+    left: 50%;
+    top: 50%;
+    pointer-events: none;
+    box-shadow: 0 0 6px var(--orange);
 }

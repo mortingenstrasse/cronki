@@ -8,6 +8,18 @@
 </head>
 <body>
 
+    <!-- OPENING SCREEN -->
+    <div id="opening-screen">
+        <div class="opening-content">
+            <img src="images/opening.png" alt="Cronki" class="opening-logo">
+            <div class="opening-version">Beta Version 1.0</div>
+            <button class="opening-start-btn" onclick="startEngine()">▶ START ENGINE</button>
+            <div class="opening-tips">
+                💡 Tip: Tap SAMPLER to record, then add to your SEQUENCE
+            </div>
+        </div>
+    </div>
+
     <div id="daw-chassis">
         <header>
             <div style="display: flex; align-items: center;">
@@ -20,6 +32,7 @@
                     <input type="number" id="bpm-input" value="120" min="40" max="240">
                     <div class="bpm-toggle" id="bpm-toggle" onclick="toggleBPM()" title="Metronome ON/OFF"></div>
                 </div>
+                <button class="menu-btn" onclick="openMenu()">MENU</button>
             </div>
         </header>
 
@@ -61,6 +74,7 @@
                     <div class="status-bar">
                         <div class="lcd" id="seq-lcd">BAR 1:1 | STOP</div>
                         <div class="transport-controls">
+                            <div class="countdown-display" id="countdown-display"></div>
                             <div class="transport-btn btn-rec" onclick="toggleRec()" title="Record">
                                 <div class="icon-rec"></div>
                             </div>
@@ -153,6 +167,13 @@
                 </div>
 
                 <div class="deck-controls">
+                    <div class="xy-pad-wrapper">
+                        <div class="xy-pad" id="xy-pad">
+                            <div class="xy-pad-label xy-label-x">FILTER</div>
+                            <div class="xy-pad-label xy-label-y">REVERB</div>
+                            <div class="xy-cursor" id="xy-cursor"></div>
+                        </div>
+                    </div>
                     <button class="deck-btn" onclick="rewindTape()">
                         <div class="icon-rew"></div>
                         <span>REW</span>
@@ -169,10 +190,13 @@
                         <div class="icon-rec"></div>
                         <span>REC</span>
                     </button>
+                    <button class="deck-btn save-song-btn" id="save-song-btn" onclick="getSong()" style="display:none;">
+                        <span style="font-size:16px;">🎵</span>
+                        <span>SAVE</span>
+                    </button>
                 </div>
 
                 <div class="tape-status" id="tape-status">● READY</div>
-                <button class="download-btn" id="download-btn" onclick="downloadRecording()">⬇ DOWNLOAD MP3</button>
             </div>
         </main>
     </div>
@@ -181,11 +205,32 @@
     <div class="modal-overlay" id="add-instrument-modal">
         <div class="modal">
             <div class="modal-title">SELECT INSTRUMENT TYPE</div>
-            <button class="modal-btn" onclick="addInstrument('drums')">🥁 DRUMS</button>
-            <button class="modal-btn" onclick="addInstrument('keys')">🎹 KEYS</button>
+            <button class="modal-btn" onclick="addInstrument('drums')">🥁 SYNTH DRUM</button>
+            <button class="modal-btn" onclick="addInstrument('keys')">🎹 SYNTH KEYS</button>
             <button class="modal-btn" onclick="addInstrument('sampler')">🎙️ SAMPLER</button>
+            <button class="modal-btn" onclick="openSoundLibrary()">📂 REALISTIC SOUND LIBRARY</button>
             <br><br>
             <button class="modal-btn secondary" onclick="closeModal('add-instrument-modal')">CANCEL</button>
+        </div>
+    </div>
+
+
+    <!-- Sound Library Modal -->
+    <div class="modal-overlay" id="sound-library-modal">
+        <div class="modal" style="width: 95%; max-width: 400px;">
+            <div class="modal-title">📂 SOUND LIBRARY</div>
+            <div class="library-nav" id="library-nav">
+                <!-- Bank list will be rendered here -->
+            </div>
+            <div class="library-pads" id="library-pads">
+                <!-- Pads will be rendered here -->
+            </div>
+            <div class="library-inst-name-row">
+                <label style="font-size:10px; color:#999;">INSTRUMENT NAME:</label>
+                <input type="text" id="library-inst-name" class="library-name-input" placeholder="e.g. drum01">
+            </div>
+            <button class="modal-btn" onclick="confirmAddLibraryInstrument()" style="margin-top:8px;">✓ ADD INSTRUMENT</button>
+            <button class="modal-btn secondary" onclick="closeModal('sound-library-modal')">CANCEL</button>
         </div>
     </div>
 
@@ -225,7 +270,63 @@
         </div>
     </div>
 
+
+    <!-- Menu Modal -->
+    <div class="modal-overlay" id="menu-modal">
+        <div class="modal menu-modal-inner">
+            <div class="modal-title">MENU</div>
+
+            <div class="menu-item" onclick="menuSave()">
+                <div class="menu-item-icon">💾</div>
+                <div class="menu-item-text">
+                    <div class="menu-item-label">SAVE PROJECT</div>
+                    <div class="menu-item-sub">Save your current work</div>
+                </div>
+            </div>
+
+            <div class="menu-item" onclick="menuOpen()">
+                <div class="menu-item-icon">📂</div>
+                <div class="menu-item-text">
+                    <div class="menu-item-label">OPEN PROJECT</div>
+                    <div class="menu-item-sub">Load a saved project</div>
+                </div>
+            </div>
+            <input type="file" id="open-project-file" accept=".cronki" style="display:none;" onchange="menuOpenFile(this)">
+
+            <div class="menu-divider"></div>
+
+            <div class="menu-item" id="menu-audio-devices">
+                <div class="menu-item-icon">🎙️</div>
+                <div class="menu-item-text">
+                    <div class="menu-item-label">INPUT DEVICE</div>
+                    <div class="menu-item-sub" id="menu-input-device">Detecting...</div>
+                </div>
+            </div>
+
+            <div class="menu-item">
+                <div class="menu-item-icon">🔊</div>
+                <div class="menu-item-text">
+                    <div class="menu-item-label">OUTPUT DEVICE</div>
+                    <div class="menu-item-sub" id="menu-output-device">Detecting...</div>
+                </div>
+            </div>
+
+            <div class="menu-divider"></div>
+
+            <div class="menu-item menu-item-disabled">
+                <div class="menu-item-icon">🎹</div>
+                <div class="menu-item-text">
+                    <div class="menu-item-label">MIDI</div>
+                    <div class="menu-item-sub">Coming Soon!</div>
+                </div>
+            </div>
+
+            <button class="modal-btn secondary" style="margin-top:12px;" onclick="closeModal('menu-modal')">CLOSE</button>
+        </div>
+    </div>
+
+    <script src="vinylFXData.js"></script>
+    <script src="soundBankData.js"></script>
     <script src="script.js"></script>
-    <script src="soundEngine.js"></script>
 </body>
 </html>
