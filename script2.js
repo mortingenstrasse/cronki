@@ -115,12 +115,7 @@
 
         window.addEventListener('DOMContentLoaded', initXYPad);
 
-        // Initialize on first user interaction
-        document.addEventListener('click', () => initAudio(), { once: true });
-        document.addEventListener('touchstart', () => initAudio(), { once: true });
-
-
-         // =============================================
+        // =============================================
         // PERFORMANCE MODE
         // =============================================
         let perfOctave = 4;
@@ -239,17 +234,12 @@
 
             // Record
             if (state.isRecording && state.isPlaying) {
-            let storedPad = padIndex;
-            // Keys için octave bilgisini sakla (drums/sampler/library hariç)
-            if (inst.type !== 'drums' && inst.type !== 'sampler' && inst.type !== 'library') {
-                storedPad = padIndex + (perfOctave * 100); // 100+octave olarak sakla
+                const note = { beat: state.currentBeat, pad: padIndex, time: audioCtx.currentTime, _justRecorded: true };
+                seq.notes[inst.id].push(note);
+                setTimeout(() => { note._justRecorded = false; }, 60000 / state.bpm / 4);
+                renderNotesOnPianoRoll();
+                renderPerfPianoRoll();
             }
-            const note = { beat: state.currentBeat, pad: storedPad, time: audioCtx.currentTime, _justRecorded: true };
-            seq.notes[inst.id].push(note);
-            setTimeout(() => { note._justRecorded = false; }, 60000 / state.bpm / 4);
-            renderNotesOnPianoRoll();
-            renderPerfPianoRoll();
-        }
         }
 
         function playKeyNoteByMidi(ctx, dest, semiOffset) {
@@ -271,25 +261,150 @@
 
         // Add Performance button to transport bar when instrument is active
         function updatePerfButton() {
-        let btn = document.getElementById('perf-mode-btn');
-        if (!btn) {
-            btn = document.createElement('div');
-            btn.id = 'perf-mode-btn';
-            btn.className = 'transport-btn perf-btn';
-            btn.title = 'Performance Mode';
-            btn.textContent = 'PERFORMANCE';
-            btn.onclick = openPerformanceMode;
-            const transport = document.querySelector('.transport-controls');
-            if (transport) transport.insertBefore(btn, transport.firstChild);
+            let btn = document.getElementById('perf-mode-btn');
+            if (!btn) {
+                btn = document.createElement('div');
+                btn.id = 'perf-mode-btn';
+                btn.className = 'transport-btn perf-btn';
+                btn.title = 'Performance Mode';
+                btn.textContent = 'PERFORMANCE';
+                btn.onclick = openPerformanceMode;
+                const transport = document.querySelector('.transport-controls');
+                if (transport) transport.insertBefore(btn, transport.firstChild);
+            }
+            btn.style.display = state.activeInstrumentId ? 'flex' : 'none';
         }
-        
-        // Sadece drums, keys, library'de göster (sampler hariç)
-        const seq = state.sequences[state.currentSequence];
-        const inst = seq.instruments.find(i => i.id === state.activeInstrumentId);
-        const showPerf = inst && inst.type !== 'sampler';
-        btn.style.display = showPerf ? 'flex' : 'none';
-    }
 
+        // =============================================
+        // AUDIO TRACK INSTRUMENT
+        // =============================================
+        let audioTrackStreams = {}; // instId -> { mediaRecorder, chunks }
+        let audioTrackSources = {}; // instId -> AudioBufferSourceNode (currently playing)
+
+        function addAudioTrack() {
+            closeModal('add-instrument-modal');
+            initAudio();
+
+            const seq = state.sequences[state.currentSequence];
+            const id = ++instrumentIdCounter;
+            const name = `AUDIO ${id}`;
+
+            const instrument = {
+                id, type: 'audiotrack', name,
+                muted: false, solo: false,
+                eq: { low: 0, mid: 0, high: 0, volume: 80 },
+                gainNode: null, eqNodes: null,
+                audioBuffer: null,
+                isRecording: false,
+                recordedBeats: 0  // how many beats were recorded
+            };
+
+            setupInstrumentAudio(instrument);
+            seq.instruments.push(instrument);
+            seq.notes[id] = [];
+            state.activeInstrumentId = id;
+
+            renderInstruments();
+            renderPads();
+            showToast('🎚️ Audio Track added — press REC to record');
+        }
+
+        async function startAudioTrackRecord(inst) {
+            if (!navigator.mediaDevices) { showToast('❌ Mic not available'); return; }
+            if (inst.isRecording) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus'
+                    : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg');
+                const mr = new MediaRecorder(stream, { mimeType });
+                const chunks = [];
+                mr.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+                mr.onstop = async () => {
+                    stream.getTracks().forEach(t => t.stop());
+                    if (chunks.length === 0) { showToast('⚠️ No audio captured'); return; }
+                    try {
+                        const blob = new Blob(chunks, { type: mimeType.split(';')[0] });
+                        const ab = await blob.arrayBuffer();
+                        const buf = await audioCtx.decodeAudioData(ab);
+                        inst.audioBuffer = buf;
+                        inst.recordedBeats = state.sequences[state.currentSequence].length * 4;
+                        showToast('✓ Audio Track recorded!');
+                        renderPads();
+                        renderNotesOnPianoRoll();
+                        renderInstruments();
+                        // If currently playing, restart the loop source for this inst
+                        if (state.isPlaying) scheduleAudioTrackLoop(inst);
+                    } catch(err) {
+                        console.error('Audio decode error:', err);
+                        showToast('❌ Could not decode audio');
+                    }
+                };
+                mr.start(50);
+                audioTrackStreams[inst.id] = { mr, stream, chunks };
+                inst.isRecording = true;
+                renderPads();
+                renderInstruments();
+            } catch(e) {
+                console.error('Mic error:', e);
+                showToast('❌ Mic permission denied');
+            }
+        }
+
+        function stopAudioTrackRecord(inst) {
+            const tr = audioTrackStreams[inst.id];
+            if (tr && tr.mr.state !== 'inactive') {
+                tr.mr.requestData(); // flush remaining
+                tr.mr.stop();
+            }
+            delete audioTrackStreams[inst.id];
+            inst.isRecording = false;
+            renderPads();
+            renderInstruments();
+        }
+
+        // Schedule audio track to loop in sync with the sequencer
+        function scheduleAudioTrackLoop(inst) {
+            if (!inst.audioBuffer || !inst.eqNodes || !audioCtx) return;
+
+            // Stop existing source
+            stopAudioTrackSource(inst.id);
+
+            const seq = state.sequences[state.currentSequence];
+            const totalBeats = seq.length * 4;
+            const beatDuration = 60 / state.bpm / 4; // seconds per 16th note
+            const loopDuration = totalBeats * beatDuration;
+
+            // Calculate where we are in the loop
+            const currentBeatInLoop = state.currentBeat;
+            const offsetSeconds = currentBeatInLoop * beatDuration;
+
+            const source = audioCtx.createBufferSource();
+            source.buffer = inst.audioBuffer;
+            source.loop = true;
+            source.loopStart = 0;
+            source.loopEnd = inst.audioBuffer.duration;
+
+            const dest = inst.eqNodes ? inst.eqNodes.low : masterGain;
+            source.connect(dest);
+
+            // Start from the right offset so it's in sync with the beat
+            source.start(audioCtx.currentTime, offsetSeconds % inst.audioBuffer.duration);
+            audioTrackSources[inst.id] = source;
+        }
+
+        function stopAudioTrackSource(instId) {
+            const src = audioTrackSources[instId];
+            if (src) {
+                try { src.stop(); } catch(e) {}
+                try { src.disconnect(); } catch(e) {}
+                delete audioTrackSources[instId];
+            }
+        }
+
+        function playAudioTrack(inst) {
+            scheduleAudioTrackLoop(inst);
+        }
 
         // =============================================
         // MIDI SUPPORT
@@ -335,71 +450,34 @@
         }
 
         function onMidiMessage(e) {
-        const [status, note, velocity] = e.data;
-        const cmd = status & 0xf0;
+            const [status, note, velocity] = e.data;
+            const cmd = status & 0xf0;
 
-        // Note On (0x90) with velocity > 0
-        if (cmd === 0x90 && velocity > 0) {
-            const seq = state.sequences[state.currentSequence];
-            const inst = seq.instruments.find(i => i.id === state.activeInstrumentId);
-            
-            // Sadece keys instrument'ı için full MIDI range
-            if (inst && inst.type !== 'drums' && inst.type !== 'sampler' && inst.type !== 'library') {
-                // KEYS: Tüm MIDI notaları (0-127) kaydet
-                const padIndex = note - MIDI_PAD_BASE; // C4 = 0, C4+1 = 1, vs
-                
-                // Ses çal (tüm notalar)
-                const semiOffset = note - 60; // C4 = 0
-                playKeyNoteByMidi(audioCtx, masterGain, semiOffset);
-                
-                // Görsel feedback (sadece 0-15 arası varsa)
-                const displayPad = ((padIndex % 16) + 16) % 16; // 0-15 arası
-                const perfPad = document.querySelector(`#perf-pad-grid .perf-pad[data-pad="${displayPad}"]`);
-                if (perfPad) { perfPad.classList.add('hit'); setTimeout(() => perfPad.classList.remove('hit'), 100); }
-                
-                // KAYIT: Gerçek MIDI note değerini kaydet (padIndex değil!)
-                if (state.isRecording && state.isPlaying) {
-                    // MIDI note'u direkt kaydet (0-127 arası)
-                    const storedPad = 1000 + note; // 1000+note olarak sakla (octave'dan farklı)
-                    const recNote = { 
-                        beat: state.currentBeat, 
-                        pad: storedPad, 
-                        time: audioCtx.currentTime, 
-                        _justRecorded: true 
-                    };
-                    seq.notes[inst.id].push(recNote);
-                    setTimeout(() => { recNote._justRecorded = false; }, 60000 / state.bpm / 4);
-                    renderNotesOnPianoRoll();
-                    if (document.getElementById('performance-view').style.display !== 'none') {
-                        renderPerfPianoRoll();
-                    }
-                }
-            } else {
-                // Drums/Sampler/Library: Sadece 0-15 pad'ler
-                const padIndex = note - MIDI_PAD_BASE;
+            // Note On (0x90) with velocity > 0
+            if (cmd === 0x90 && velocity > 0) {
+                const padIndex = note - MIDI_PAD_BASE; // C4 = pad 0
                 if (padIndex >= 0 && padIndex < 16) {
+                    // Trigger the pad
                     if (document.getElementById('performance-view').style.display !== 'none') {
                         perfHitPad(padIndex);
                     } else {
                         hitPad(padIndex);
                     }
-                    // Highlight
+                    // Highlight pad visual
                     const perfPad = document.querySelector(`#perf-pad-grid .perf-pad[data-pad="${padIndex}"]`);
                     if (perfPad) { perfPad.classList.add('hit'); setTimeout(() => perfPad.classList.remove('hit'), 100); }
                     const mainPad = document.querySelector(`#pad-grid .pad[data-pad="${padIndex}"]`);
                     if (mainPad) { mainPad.classList.add('hit'); setTimeout(() => mainPad.classList.remove('hit'), 100); }
                 }
             }
-        }
-        
-        // Control Change 0xB0: CC 74 = filter, CC 91 = reverb
-        if (cmd === 0xB0) {
-            if (note === 74 && masterFilter) {
-                const freq = 200 + (velocity / 127) * 19800;
-                masterFilter.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.02);
+            // Control Change 0xB0: CC 74 = filter, CC 91 = reverb
+            if (cmd === 0xB0) {
+                if (note === 74 && masterFilter) {
+                    const freq = 200 + (velocity / 127) * 19800;
+                    masterFilter.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.02);
+                }
             }
         }
-    }
 
         // Auto-try MIDI on load (silent fail)
         window.addEventListener('DOMContentLoaded', () => {
@@ -444,13 +522,13 @@
             tapePlaying: false,
             recordedBlob: null,
 
-            // Sampler
+            // Sampler TAB state — dedicated to the Sampler tab only
             sampler: {
                 isRecording: false,
                 recordingStartTime: 0,
-                recordedBuffer: null,
-                chops: [], // [{ pad, start, end }]
-                activeChop: null // { pad, start }
+                recordedBuffer: null,   // SAMPLER TAB's own buffer
+                chops: [],              // SAMPLER TAB's own chops
+                activeChop: null
             }
         };
 
@@ -713,11 +791,12 @@
         }
 
         function addInstrument(type) {
+            if (type === 'audiotrack') { addAudioTrack(); return; }
             closeModal('add-instrument-modal');
 
             const seq = state.sequences[state.currentSequence];
             const id = ++instrumentIdCounter;
-            const name = type === 'drums' ? `DRUMS ${id}` : `KEYS ${id}`;
+            const name = type === 'drums' ? `DRUMS ${id}` : (type === 'sampler' ? `SAMPLER ${id}` : `KEYS ${id}`);
 
             const instrument = {
                 id: id,
@@ -727,7 +806,11 @@
                 solo: false,
                 eq: { low: 0, mid: 0, high: 0, volume: 80 },
                 gainNode: null,
-                eqNodes: null
+                eqNodes: null,
+                // Per-instrument sampler data (used when type === 'sampler')
+                recordedBuffer: null,
+                chops: [],
+                tuning: 0
             };
 
             // Create audio nodes for this instrument
@@ -793,7 +876,7 @@
                 };
 
                 div.innerHTML = `
-                    <div class="track-icon ${inst.type}">${inst.type === 'drums' ? '🥁' : (inst.type === 'sampler' ? '🎙️' : (inst.type === 'library' ? '📂' : '🎹'))}</div>
+                    <div class="track-icon ${inst.type}">${inst.type === 'drums' ? '🥁' : (inst.type === 'sampler' ? '🎙️' : (inst.type === 'library' ? '📂' : (inst.type === 'audiotrack' ? '🎚️' : '🎹')))}</div>
                     <div class="track-info">
                         <div class="track-name">${inst.name}</div>
                     </div>
@@ -813,6 +896,7 @@
             state.activeInstrumentId = id;
             renderInstruments();
             renderPads();
+            updatePerfButton();
         }
 
         function toggleSolo(id) {
@@ -847,6 +931,15 @@
                         inst.gainNode.gain.value = 0;
                     } else {
                         inst.gainNode.gain.value = inst.eq.volume / 100;
+                    }
+                }
+                // Handle audio track loop start/stop based on mute state
+                if (inst.type === 'audiotrack' && state.isPlaying) {
+                    const shouldPlay = !inst.muted && !(hasSolo && !inst.solo) && inst.audioBuffer;
+                    if (shouldPlay && !audioTrackSources[inst.id]) {
+                        scheduleAudioTrackLoop(inst);
+                    } else if (!shouldPlay && audioTrackSources[inst.id]) {
+                        stopAudioTrackSource(inst.id);
                     }
                 }
             });
@@ -969,6 +1062,32 @@
 
             // Remove existing notes
             grid.querySelectorAll('.piano-note').forEach(n => n.remove());
+            grid.querySelectorAll('.audiotrack-wave-block').forEach(n => n.remove());
+
+            // Audio track: show waveform spanning the full piano roll
+            if (inst && inst.type === 'audiotrack' && inst.audioBuffer) {
+                const totalBeats = seq.length * 4;
+                const gridW = grid.scrollWidth || grid.offsetWidth;
+
+                const block = document.createElement('div');
+                block.className = 'audiotrack-wave-block';
+                block.style.cssText = `
+                    position: absolute; left: 0; top: 4px;
+                    width: 100%; height: calc(100% - 16px);
+                    pointer-events: none; z-index: 2;
+                `;
+
+                const canvas = document.createElement('canvas');
+                canvas.style.cssText = 'width:100%;height:100%;display:block;';
+                canvas.width = Math.max(totalBeats * 40, 320);
+                canvas.height = 36;
+
+                drawAudioTrackWaveform(canvas, inst.audioBuffer);
+                block.appendChild(canvas);
+                grid.style.position = 'relative';
+                grid.appendChild(block);
+                return;
+            }
 
             // Add notes for active instrument
             if (state.activeInstrumentId && seq.notes[state.activeInstrumentId]) {
@@ -981,15 +1100,15 @@
                         noteEl.style.left = '2px';
                         noteEl.style.width = '80%';
                         
-                        if (inst && inst.type === 'sampler' && state.sampler.recordedBuffer) {
-                            const chop = state.sampler.chops.find(c => c.pad === note.pad);
+                        if (inst && inst.type === 'sampler' && inst.recordedBuffer) {
+                            const chop = inst.chops && inst.chops.find(c => c.pad === note.pad);
                             if (chop) {
                                 const canvas = document.createElement('canvas');
                                 canvas.width = 40;
                                 canvas.height = 10;
                                 canvas.style.width = '100%';
                                 canvas.style.height = '100%';
-                                drawSmallWaveform(canvas, chop);
+                                drawSmallWaveform(canvas, chop, inst);
                                 noteEl.appendChild(canvas);
                                 noteEl.style.background = 'transparent';
                                 noteEl.style.border = '1px solid var(--orange)';
@@ -1002,11 +1121,58 @@
             }
         }
 
-        function drawSmallWaveform(canvas, chop) {
+        function drawAudioTrackWaveform(canvas, audioBuffer) {
             const ctx = canvas.getContext('2d');
-            const data = state.sampler.recordedBuffer.getChannelData(0);
-            const startIdx = Math.floor(chop.start * state.sampler.recordedBuffer.sampleRate);
-            const endIdx = Math.floor(chop.end * state.sampler.recordedBuffer.sampleRate);
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            const data = audioBuffer.getChannelData(0);
+            const step = Math.ceil(data.length / w);
+            const amp = h / 2;
+
+            // Background
+            ctx.fillStyle = 'rgba(46, 204, 113, 0.08)';
+            ctx.fillRect(0, 0, w, h);
+
+            // Waveform
+            ctx.strokeStyle = 'rgba(46, 204, 113, 0.85)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let i = 0; i < w; i++) {
+                let min = 1.0, max = -1.0;
+                for (let j = 0; j < step; j++) {
+                    const d = data[i * step + j];
+                    if (d !== undefined) { if (d < min) min = d; if (d > max) max = d; }
+                }
+                const yTop = (1 + min) * amp;
+                const yBot = (1 + max) * amp;
+                if (i === 0) ctx.moveTo(i, amp);
+                ctx.lineTo(i, yTop);
+                ctx.lineTo(i, yBot);
+            }
+            ctx.stroke();
+
+            // Center line
+            ctx.strokeStyle = 'rgba(46,204,113,0.2)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(0, amp);
+            ctx.lineTo(w, amp);
+            ctx.stroke();
+
+            // Label
+            ctx.fillStyle = 'rgba(46,204,113,0.9)';
+            ctx.font = 'bold 8px monospace';
+            ctx.fillText('AUDIO TRACK', 4, h - 3);
+        }
+
+        function drawSmallWaveform(canvas, chop, inst) {
+            const ctx = canvas.getContext('2d');
+            if (!inst || !inst.recordedBuffer) return;
+            const data = inst.recordedBuffer.getChannelData(0);
+            const startIdx = Math.floor(chop.start * inst.recordedBuffer.sampleRate);
+            const endIdx = Math.floor(chop.end * inst.recordedBuffer.sampleRate);
             const slice = data.slice(startIdx, endIdx);
             
             ctx.fillStyle = 'rgba(242, 92, 25, 0.5)';
@@ -1049,7 +1215,7 @@
                         pad.textContent = drumPadMap[i].toUpperCase().slice(0, 3);
                     } else if (inst.type === 'sampler') {
                         pad.textContent = "CHOP " + (i + 1);
-                        if (state.sampler.chops.find(c => c.pad === i)) {
+                        if (inst.chops && inst.chops.find(c => c.pad === i)) {
                             pad.classList.add('has-sample');
                         }
                     } else if (inst.type === 'library') {
@@ -1061,6 +1227,27 @@
                             pad.textContent = '-';
                             pad.style.opacity = '0.3';
                         }
+                    } else if (inst.type === 'audiotrack') {
+                        let statusText, statusColor;
+                        if (inst.isRecording) {
+                            statusText = '⏺ RECORDING...';
+                            statusColor = 'linear-gradient(180deg,#c44 0%,#900 100%)';
+                        } else if (inst.audioBuffer) {
+                            const dur = inst.audioBuffer.duration.toFixed(1);
+                            statusText = `▶ LOOPING  ${dur}s`;
+                            statusColor = 'linear-gradient(180deg,#3a7a4a 0%,#255535 100%)';
+                        } else {
+                            statusText = '⏺ PRESS REC TO RECORD';
+                            statusColor = '';
+                        }
+                        pad.textContent = i === 0 ? statusText : '';
+                        pad.style.opacity = i === 0 ? '0.85' : '0';
+                        pad.style.pointerEvents = 'none';
+                        pad.style.cursor = 'default';
+                        pad.style.background = i === 0 ? statusColor : '';
+                        pad.style.fontSize = '9px';
+                        pad.style.letterSpacing = '0.5px';
+                        if (i > 0) pad.style.border = 'none';
                     } else {
                         const notes = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C+', 'D+', 'E+', 'F+', 'G+', 'A+', 'B+', 'C++', 'D++'];
                         pad.textContent = notes[i];
@@ -1104,21 +1291,15 @@
                     playMetronomeClick();
                 }
             } else if (inst.type === 'sampler') {
-                playChop(padIndex, inst.tuning || 0, destination);
+                playChopFromInst(inst, padIndex, inst.tuning || 0, destination);
             } else if (inst.type === 'library') {
                 playLibrarySample(inst, padIndex);
+            } else if (inst.type === 'audiotrack') {
+                // Pads are disabled for audio tracks - recording is controlled by REC button
+                return;
             } else {
-            // Keys: octave çöz
-            let actualPad = padIndex;
-            let playOctave = 4;
-            if (padIndex >= 100) {
-                playOctave = Math.floor(padIndex / 100);
-                actualPad = padIndex % 100;
+                playKeyNote(audioCtx, destination, padIndex);
             }
-            const semi = PAD_SEMITONE[actualPad];
-            const baseOctaveNote = (playOctave - 4) * 12 + semi;
-            playKeyNoteByMidi(audioCtx, destination, baseOctaveNote);
-        }
 
             // Record if recording
             if (state.isRecording && state.isPlaying) {
@@ -1142,14 +1323,19 @@
 
         function toggleRec() {
             if (state.isRecording) {
-                // Stop recording immediately
                 state.isRecording = false;
                 const btn = document.querySelector('.btn-rec');
-                btn.classList.remove('recording');
+                if (btn) btn.classList.remove('recording');
                 clearCountdown();
+                // Stop any active audio track recording (decode will trigger loop restart)
+                const seq = state.sequences[state.currentSequence];
+                seq.instruments.forEach(inst => {
+                    if (inst.type === 'audiotrack' && inst.isRecording) {
+                        stopAudioTrackRecord(inst);
+                    }
+                });
                 updateLCD();
             } else {
-                // Start countdown then record
                 startCountdownThenRecord();
             }
         }
@@ -1187,6 +1373,11 @@
                     const btn = document.querySelector('.btn-rec');
                     btn.classList.add('recording');
                     if (!state.isPlaying) startPlayback();
+                    // Start recording for any audiotrack instruments in current sequence
+                    const seq = state.sequences[state.currentSequence];
+                    seq.instruments.forEach(inst => {
+                        if (inst.type === 'audiotrack') startAudioTrackRecord(inst);
+                    });
                     updateLCD();
                     // Clear dot after a moment
                     countdownTimeout = setTimeout(() => {
@@ -1215,7 +1406,14 @@
 
             const seq = state.sequences[state.currentSequence];
             const totalBeats = seq.length * 4;
-            const beatDuration = 60000 / state.bpm / 4; // 16th notes
+            const beatDuration = 60000 / state.bpm / 4; // 16th notes ms
+
+            // Start audio track loops immediately in sync
+            seq.instruments.forEach(inst => {
+                if (inst.type === 'audiotrack' && inst.audioBuffer && !inst.muted) {
+                    scheduleAudioTrackLoop(inst);
+                }
+            });
 
             playInterval = setInterval(() => {
                 highlightBeat(state.currentBeat);
@@ -1253,6 +1451,12 @@
                 playInterval = null;
             }
 
+            // Stop all audio track loops
+            const seq = state.sequences[state.currentSequence];
+            seq.instruments.forEach(inst => {
+                if (inst.type === 'audiotrack') stopAudioTrackSource(inst.id);
+            });
+
             document.querySelector('.btn-play').classList.remove('playing');
             highlightBeat(-1);
             updateLCD();
@@ -1271,30 +1475,15 @@
                     playMetronomeClick();
                 }
             } else if (inst.type === 'sampler') {
-                playChop(padIndex, inst.tuning || 0, destination);
+                playChopFromInst(inst, padIndex, inst.tuning || 0, destination);
             } else if (inst.type === 'library') {
                 playLibrarySample(inst, padIndex);
+            } else if (inst.type === 'audiotrack') {
+                // Audio tracks are loop-based, handled by scheduleAudioTrackLoop
+                return;
             } else {
-            let semiOffset;
-            
-            // MIDI note mu (1000+), octave'li mi (100+), yoksa normal pad mi?
-            if (padIndex >= 1000) {
-                // Direkt MIDI note (1000 + note)
-                const midiNote = padIndex - 1000;
-                semiOffset = midiNote - 60; // C4 = 0
-            } else if (padIndex >= 100) {
-                // Eski octave format (100*octave + pad)
-                const playOctave = Math.floor(padIndex / 100);
-                const actualPad = padIndex % 100;
-                const semi = PAD_SEMITONE[actualPad];
-                semiOffset = (playOctave - 4) * 12 + semi;
-            } else {
-                // Normal pad (0-15)
-                semiOffset = PAD_SEMITONE[padIndex];
+                playKeyNote(audioCtx, destination, padIndex);
             }
-            
-            playKeyNoteByMidi(audioCtx, destination, semiOffset);
-        }
         }
 
         function playMetronomeClick() {
@@ -1648,8 +1837,12 @@
 
         init();
         // =============================================
+        // =============================================
         // SAMPLER LOGIC
         // =============================================
+        // The Sampler Tab has its OWN dedicated buffer/chops stored in state.sampler.
+        // Sequence sampler instruments each have their OWN inst.recordedBuffer / inst.chops.
+        // They do NOT share state.
         let samplerMediaRecorder = null;
         let samplerAudioChunks = [];
         let samplerStream = null;
@@ -1678,25 +1871,28 @@
                 samplerMediaRecorder.onstop = async () => {
                     const blob = new Blob(samplerAudioChunks, { type: 'audio/wav' });
                     const arrayBuffer = await blob.arrayBuffer();
+                    // Store in Sampler Tab's dedicated state
                     state.sampler.recordedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                    state.sampler.chops = [];
                     drawWaveform();
-                    updateSamplerLCD("RECORDING FINISHED");
+                    updateSamplerLCD('RECORDING FINISHED');
                 };
 
                 samplerMediaRecorder.start();
                 state.sampler.isRecording = true;
                 state.sampler.recordingStartTime = audioCtx.currentTime;
+                state.sampler.activeChop = null;
                 state.sampler.chops = [];
-                
+
                 document.getElementById('sampler-rec-btn').classList.add('recording');
                 document.getElementById('sampler-vinyl').classList.add('rotating');
-                updateSamplerLCD("RECORDING...");
+                updateSamplerLCD('RECORDING...');
 
                 // VU Meter
-                const source = audioCtx.createMediaStreamSource(samplerStream);
+                const vuSource = audioCtx.createMediaStreamSource(samplerStream);
                 samplerAnalyser = audioCtx.createAnalyser();
                 samplerAnalyser.fftSize = 256;
-                source.connect(samplerAnalyser);
+                vuSource.connect(samplerAnalyser);
                 updateSamplerVU();
 
                 // Max 30 seconds
@@ -1705,8 +1901,8 @@
                 }, 30000);
 
             } catch (err) {
-                console.error("Error accessing microphone:", err);
-                alert("Could not access microphone.");
+                console.error('Error accessing microphone:', err);
+                alert('Could not access microphone.');
             }
         }
 
@@ -1715,7 +1911,7 @@
                 samplerMediaRecorder.stop();
                 samplerStream.getTracks().forEach(track => track.stop());
                 state.sampler.isRecording = false;
-                
+
                 document.getElementById('sampler-rec-btn').classList.remove('recording');
                 document.getElementById('sampler-vinyl').classList.remove('rotating');
                 cancelAnimationFrame(samplerAnimationId);
@@ -1738,16 +1934,17 @@
         }
 
         function renderSamplerPads() {
+            const chops = state.sampler.chops || [];
             const grid = document.getElementById('sampler-pad-grid');
             grid.innerHTML = '';
             for (let i = 0; i < 16; i++) {
                 const pad = document.createElement('div');
                 pad.className = 'pad';
-                if (state.sampler.chops.find(c => c.pad === i)) {
+                if (chops.find(c => c.pad === i)) {
                     pad.classList.add('has-sample');
                 }
                 pad.dataset.pad = i;
-                pad.textContent = "PAD " + (i + 1);
+                pad.textContent = 'PAD ' + (i + 1);
 
                 pad.onmousedown = () => startChop(i);
                 pad.onmouseup = () => endChop(i);
@@ -1760,7 +1957,10 @@
 
         function startChop(padIndex) {
             if (!state.sampler.isRecording) {
-                playChop(padIndex);
+                // Play from Sampler Tab's own buffer
+                if (state.sampler.recordedBuffer) {
+                    playChopFromBuffer(state.sampler.recordedBuffer, state.sampler.chops, padIndex, 0, null);
+                }
                 return;
             }
             state.sampler.activeChop = {
@@ -1768,41 +1968,45 @@
                 start: audioCtx.currentTime - state.sampler.recordingStartTime
             };
             const pad = document.querySelector(`#sampler-pad-grid .pad[data-pad="${padIndex}"]`);
-            pad.classList.add('chopping');
+            if (pad) pad.classList.add('chopping');
         }
 
         function endChop(padIndex) {
             if (!state.sampler.isRecording || !state.sampler.activeChop || state.sampler.activeChop.pad !== padIndex) return;
-            
+
             const endTime = audioCtx.currentTime - state.sampler.recordingStartTime;
             state.sampler.chops = state.sampler.chops.filter(c => c.pad !== padIndex);
-            state.sampler.chops.push({
-                pad: padIndex,
-                start: state.sampler.activeChop.start,
-                end: endTime
-            });
-            
+            state.sampler.chops.push({ pad: padIndex, start: state.sampler.activeChop.start, end: endTime });
+
             state.sampler.activeChop = null;
             const pad = document.querySelector(`#sampler-pad-grid .pad[data-pad="${padIndex}"]`);
-            pad.classList.remove('chopping');
-            pad.classList.add('has-sample');
+            if (pad) { pad.classList.remove('chopping'); pad.classList.add('has-sample'); }
             drawWaveform();
         }
 
-        function playChop(padIndex, tuning = 0, destination = null) {
-            if (!state.sampler.recordedBuffer) return;
-            const chop = state.sampler.chops.find(c => c.pad === padIndex);
+        // Core chop playback: given a buffer and chops array, play pad at padIndex
+        function playChopFromBuffer(buffer, chops, padIndex, tuning, destination) {
+            if (!buffer) return;
+            const chop = chops.find(c => c.pad === padIndex);
             if (!chop) return;
-
             const source = audioCtx.createBufferSource();
-            source.buffer = state.sampler.recordedBuffer;
-            
-            // Tuning: 1 semitone = 2^(1/12)
-            source.playbackRate.value = Math.pow(2, tuning / 12);
-            
+            source.buffer = buffer;
+            source.playbackRate.value = Math.pow(2, (tuning || 0) / 12);
             const dest = destination || masterGain;
             source.connect(dest);
             source.start(0, chop.start, chop.end - chop.start);
+        }
+
+        // Play a chop from a specific sequence instrument
+        function playChopFromInst(inst, padIndex, tuning = 0, destination = null) {
+            if (!inst || !inst.recordedBuffer) return;
+            const dest = destination || (inst.eqNodes ? inst.eqNodes.low : masterGain);
+            playChopFromBuffer(inst.recordedBuffer, inst.chops || [], padIndex, tuning, dest);
+        }
+
+        // Sampler Tab: play from state.sampler's buffer (not any instrument)
+        function playChop(padIndex, tuning = 0, destination = null) {
+            playChopFromBuffer(state.sampler.recordedBuffer, state.sampler.chops, padIndex, tuning, destination || masterGain);
         }
 
         function drawWaveform() {
@@ -1838,7 +2042,7 @@
             ctx.stroke();
 
             // Draw chops
-            state.sampler.chops.forEach(chop => {
+            (state.sampler.chops || []).forEach(chop => {
                 const x1 = (chop.start / state.sampler.recordedBuffer.duration) * width;
                 const x2 = (chop.end / state.sampler.recordedBuffer.duration) * width;
                 ctx.fillStyle = 'rgba(242, 92, 25, 0.3)';
@@ -2145,7 +2349,7 @@
                         bankName: inst.bankName || null,
                         padNames: inst.padNames || null,
                         // sampler chops ref
-                        samplerChops: inst.type === 'sampler' ? state.sampler.chops : null
+                        samplerChops: inst.type === 'sampler' ? (inst.chops || []) : null
                     }))
                 })),
                 songArrangement: state.songArrangement,

@@ -1155,3 +1155,197 @@
     pointer-events: none;
     box-shadow: 0 0 6px var(--orange);
 }
+
+/* ---- PERFORMANCE MODE ---- */
+.perf-overlay {
+    position: fixed;
+    inset: 0;
+    background: #111;
+    z-index: 9000;
+    display: flex;
+    flex-direction: column;
+}
+
+.perf-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1a1a1a;
+    padding: 6px 10px;
+    border-bottom: 2px solid var(--orange);
+    height: 50px;
+    flex-shrink: 0;
+}
+
+.perf-back-btn {
+    background: #333;
+    border: 1px solid #555;
+    color: #fff;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 1px;
+}
+
+.perf-back-btn:active { background: #555; }
+
+.perf-title {
+    font-family: monospace;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: var(--orange);
+}
+
+.perf-transport {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.perf-piano-roll-wrap {
+    background: #1e1e1e;
+    border-bottom: 1px solid #333;
+    overflow-x: auto;
+    height: 50px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: stretch;
+}
+
+.perf-piano-roll-wrap .piano-roll-grid {
+    display: flex;
+    height: 100%;
+    min-width: 100%;
+}
+
+.perf-pad-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 6px;
+    padding: 8px;
+    min-height: 0;
+}
+
+.perf-pad {
+    background: linear-gradient(180deg, #888 0%, #666 100%);
+    border: 3px solid #444;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: monospace;
+    font-size: 13px;
+    font-weight: bold;
+    color: #fff;
+    cursor: pointer;
+    user-select: none;
+    touch-action: none;
+    letter-spacing: 1px;
+    box-shadow: 0 5px 0 #333;
+    transition: background 0.05s;
+}
+
+.perf-pad:active, .perf-pad.hit {
+    background: var(--orange);
+    transform: translateY(3px);
+    box-shadow: 0 2px 0 #333;
+}
+
+.perf-pad.has-sample {
+    border-color: #888;
+    background: linear-gradient(180deg, #7a7a7a 0%, #585858 100%);
+}
+
+.perf-octave-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #1a1a1a;
+    border-top: 1px solid #333;
+    padding: 8px;
+    flex-shrink: 0;
+    height: 44px;
+}
+
+.perf-octave-label {
+    font-family: monospace;
+    font-size: 10px;
+    color: #888;
+    letter-spacing: 1px;
+}
+
+.perf-oct-btn {
+    background: linear-gradient(180deg, #777 0%, #555 100%);
+    border: 2px solid #333;
+    border-radius: 4px;
+    color: #fff;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 5px 16px;
+    cursor: pointer;
+    box-shadow: 0 3px 0 #222;
+    letter-spacing: 1px;
+}
+
+.perf-oct-btn:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 #222;
+}
+
+.perf-octave-val {
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--orange);
+    min-width: 20px;
+    text-align: center;
+}
+
+/* ---- AUDIO TRACK ---- */
+.track-icon.audiotrack { filter: hue-rotate(180deg); }
+
+.audiotrack-rec-bar {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    margin: 4px;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: monospace;
+    font-size: 10px;
+    color: #aaa;
+}
+
+.audiotrack-waveform {
+    width: 100%;
+    height: 30px;
+    background: #111;
+    border-radius: 3px;
+}
+
+/* ---- PERF BUTTON IN TRANSPORT ---- */
+.perf-btn {
+    background: linear-gradient(180deg, #555 0%, #333 100%);
+    color: #fff;
+    font-family: monospace;
+    font-size: 8px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    width: auto !important;
+    padding: 0 8px;
+    border: 1px solid #777;
+}
+
+.perf-btn:active {
+    background: var(--orange);
+}

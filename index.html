@@ -15,11 +15,7 @@
             <div class="opening-version">Beta Version 1.0</div>
             <button class="opening-start-btn" onclick="startEngine()">▶ START ENGINE</button>
             <div class="opening-tips">
-                💡 Tips: Rotate your screen! Cronki will open in full-screen landscape. Close the browser tab to exit.
-
-In Sampler, press Record and hold the pads to chop. Add a Sampler in Sequence to use your chops. Create unlimited sequences and instruments, then arrange them in Song Mode.
-
-Go to Tape, press Record, and export your track as a WAV when finished.
+                💡 Tip: Tap SAMPLER to record, then add to your SEQUENCE
             </div>
         </div>
     </div>
@@ -203,6 +199,29 @@ Go to Tape, press Record, and export your track as a WAV when finished.
                 <div class="tape-status" id="tape-status">● READY</div>
             </div>
         </main>
+
+        <!-- PERFORMANCE MODE (full screen overlay) -->
+        <div id="performance-view" class="perf-overlay" style="display:none;">
+            <div class="perf-header">
+                <button class="perf-back-btn" onclick="closePerformanceMode()">◀ BACK</button>
+                <span class="perf-title" id="perf-title">PERFORMANCE MODE</span>
+                <div class="perf-transport">
+                    <div class="transport-btn btn-rec perf-rec-btn" onclick="toggleRec()" title="Record"><div class="icon-rec"></div></div>
+                    <div class="transport-btn btn-stop" onclick="stopPlayback()" title="Stop"><div class="icon-stop"></div></div>
+                    <div class="transport-btn btn-play perf-play-btn" onclick="togglePlay()" title="Play"><div class="icon-play"></div></div>
+                </div>
+            </div>
+            <div class="perf-piano-roll-wrap">
+                <div class="piano-roll-grid" id="perf-piano-roll-grid"></div>
+            </div>
+            <div class="perf-pad-grid" id="perf-pad-grid"></div>
+            <div class="perf-octave-bar">
+                <span class="perf-octave-label">OCTAVE:</span>
+                <button class="perf-oct-btn" onclick="perfOctaveShift(-1)">DOWN</button>
+                <button class="perf-oct-btn" onclick="perfOctaveShift(1)">UP</button>
+                <span class="perf-octave-val" id="perf-octave-val">4</span>
+            </div>
+        </div>
     </div>
 
     <!-- Add Instrument Modal -->
@@ -212,6 +231,7 @@ Go to Tape, press Record, and export your track as a WAV when finished.
             <button class="modal-btn" onclick="addInstrument('drums')">🥁 SYNTH DRUM</button>
             <button class="modal-btn" onclick="addInstrument('keys')">🎹 SYNTH KEYS</button>
             <button class="modal-btn" onclick="addInstrument('sampler')">🎙️ SAMPLER</button>
+            <button class="modal-btn" onclick="addInstrument('audiotrack')">🎚️ AUDIO TRACK</button>
             <button class="modal-btn" onclick="openSoundLibrary()">📂 REALISTIC SOUND LIBRARY</button>
             <br><br>
             <button class="modal-btn secondary" onclick="closeModal('add-instrument-modal')">CANCEL</button>
@@ -317,11 +337,11 @@ Go to Tape, press Record, and export your track as a WAV when finished.
 
             <div class="menu-divider"></div>
 
-            <div class="menu-item menu-item-disabled">
+            <div class="menu-item" id="menu-midi-item" onclick="requestMidiAccess()">
                 <div class="menu-item-icon">🎹</div>
                 <div class="menu-item-text">
                     <div class="menu-item-label">MIDI</div>
-                    <div class="menu-item-sub">Coming Soon!</div>
+                    <div class="menu-item-sub" id="menu-midi-device">Tap to connect...</div>
                 </div>
             </div>
 
