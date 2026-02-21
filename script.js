@@ -286,7 +286,7 @@
         // Sadece drums, keys, library'de göster (sampler hariç)
         const seq = state.sequences[state.currentSequence];
         const inst = seq.instruments.find(i => i.id === state.activeInstrumentId);
-        const showPerf = inst && inst.type !== 'sampler';
+        const showPerf = inst && inst.type !== 'sampler' && inst.type !== 'audiotrack';
         btn.style.display = showPerf ? 'flex' : 'none';
     }
 
@@ -444,13 +444,12 @@
             tapePlaying: false,
             recordedBlob: null,
 
-            // Sampler
+            // Sampler (recording state only - buffer/chops live on the instrument)
             sampler: {
                 isRecording: false,
                 recordingStartTime: 0,
-                recordedBuffer: null,
-                chops: [], // [{ pad, start, end }]
-                activeChop: null // { pad, start }
+                activeChop: null, // { pad, start }
+                currentInstId: null // which sampler inst is being recorded
             }
         };
 
@@ -690,6 +689,71 @@
             loadSequence();
         }
 
+        function duplicateSequence() {
+            const srcSeq = state.sequences[state.currentSequence];
+            const newIndex = state.sequences.length;
+            const name = `SEQ ${String(newIndex + 1).padStart(2, '0')}`;
+
+            // Deep clone instruments (without audio nodes - those get rebuilt)
+            const newInstruments = srcSeq.instruments.map(inst => {
+                const clone = {
+                    id: inst.id, // keep same IDs so notes map works
+                    type: inst.type,
+                    name: inst.name,
+                    muted: inst.muted,
+                    solo: inst.solo,
+                    eq: { ...inst.eq },
+                    tuning: inst.tuning || 0,
+                    gainNode: null,
+                    eqNodes: null
+                };
+                if (inst.type === 'sampler') {
+                    clone.chops = JSON.parse(JSON.stringify(inst.chops || []));
+                    clone.recordedBuffer = inst.recordedBuffer; // share same buffer (read-only playback)
+                }
+                if (inst.type === 'audiotrack') {
+                    clone.recordedBuffer = inst.recordedBuffer;
+                }
+                if (inst.type === 'library') {
+                    clone.bankName = inst.bankName;
+                    clone.samples = inst.samples;
+                    clone.padNames = inst.padNames ? [...inst.padNames] : null;
+                    clone.audioBuffers = inst.audioBuffers || {};
+                }
+                return clone;
+            });
+
+            // Deep clone notes
+            const newNotes = {};
+            for (const [id, noteArr] of Object.entries(srcSeq.notes)) {
+                newNotes[id] = JSON.parse(JSON.stringify(noteArr));
+            }
+
+            const newSeq = {
+                name: name,
+                length: srcSeq.length,
+                instruments: newInstruments,
+                notes: newNotes
+            };
+
+            state.sequences.push(newSeq);
+
+            const select = document.getElementById('seq-select');
+            const option = document.createElement('option');
+            option.value = newIndex;
+            option.textContent = name;
+            select.appendChild(option);
+            select.value = newIndex;
+
+            state.currentSequence = newIndex;
+
+            // Rebuild audio nodes for the new sequence's instruments
+            newSeq.instruments.forEach(inst => setupInstrumentAudio(inst));
+
+            loadSequence();
+            showToast('⧉ Sequence duplicated!');
+        }
+
         function setLength(len) {
             const seq = state.sequences[state.currentSequence];
             seq.length = len;
@@ -717,7 +781,7 @@
 
             const seq = state.sequences[state.currentSequence];
             const id = ++instrumentIdCounter;
-            const name = type === 'drums' ? `DRUMS ${id}` : `KEYS ${id}`;
+            const name = type === 'drums' ? `DRUMS ${id}` : type === 'sampler' ? `SAMPLER ${id}` : `KEYS ${id}`;
 
             const instrument = {
                 id: id,
@@ -729,6 +793,12 @@
                 gainNode: null,
                 eqNodes: null
             };
+
+            // Per-instrument buffer storage for sampler type
+            if (type === 'sampler') {
+                instrument.recordedBuffer = null;
+                instrument.chops = [];
+            }
 
             // Create audio nodes for this instrument
             if (audioCtx) {
@@ -793,7 +863,7 @@
                 };
 
                 div.innerHTML = `
-                    <div class="track-icon ${inst.type}">${inst.type === 'drums' ? '🥁' : (inst.type === 'sampler' ? '🎙️' : (inst.type === 'library' ? '📂' : '🎹'))}</div>
+                    <div class="track-icon ${inst.type}">${inst.type === 'drums' ? '🥁' : (inst.type === 'sampler' ? '🎙️' : (inst.type === 'library' ? '📂' : (inst.type === 'audiotrack' ? '🎤' : '🎹')))}</div>
                     <div class="track-info">
                         <div class="track-name">${inst.name}</div>
                     </div>
@@ -981,19 +1051,29 @@
                         noteEl.style.left = '2px';
                         noteEl.style.width = '80%';
                         
-                        if (inst && inst.type === 'sampler' && state.sampler.recordedBuffer) {
-                            const chop = state.sampler.chops.find(c => c.pad === note.pad);
+                        if (inst && inst.type === 'sampler' && inst.recordedBuffer) {
+                            const chop = inst.chops.find(c => c.pad === note.pad);
                             if (chop) {
                                 const canvas = document.createElement('canvas');
                                 canvas.width = 40;
                                 canvas.height = 10;
                                 canvas.style.width = '100%';
                                 canvas.style.height = '100%';
-                                drawSmallWaveform(canvas, chop);
+                                drawSmallWaveformFromBuffer(canvas, inst.recordedBuffer, chop.start, chop.end);
                                 noteEl.appendChild(canvas);
                                 noteEl.style.background = 'transparent';
                                 noteEl.style.border = '1px solid var(--orange)';
                             }
+                        } else if (inst && inst.type === 'audiotrack' && inst.recordedBuffer) {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 40;
+                            canvas.height = 10;
+                            canvas.style.width = '100%';
+                            canvas.style.height = '100%';
+                            drawSmallWaveformFromBuffer(canvas, inst.recordedBuffer, 0, inst.recordedBuffer.duration);
+                            noteEl.appendChild(canvas);
+                            noteEl.style.background = 'transparent';
+                            noteEl.style.border = '1px solid #4fc';
                         }
                         
                         beatEl.appendChild(noteEl);
@@ -1002,11 +1082,11 @@
             }
         }
 
-        function drawSmallWaveform(canvas, chop) {
+        function drawSmallWaveformFromBuffer(canvas, buffer, startSec, endSec) {
             const ctx = canvas.getContext('2d');
-            const data = state.sampler.recordedBuffer.getChannelData(0);
-            const startIdx = Math.floor(chop.start * state.sampler.recordedBuffer.sampleRate);
-            const endIdx = Math.floor(chop.end * state.sampler.recordedBuffer.sampleRate);
+            const data = buffer.getChannelData(0);
+            const startIdx = Math.floor(startSec * buffer.sampleRate);
+            const endIdx = Math.floor(endSec * buffer.sampleRate);
             const slice = data.slice(startIdx, endIdx);
             
             ctx.fillStyle = 'rgba(242, 92, 25, 0.5)';
@@ -1049,8 +1129,16 @@
                         pad.textContent = drumPadMap[i].toUpperCase().slice(0, 3);
                     } else if (inst.type === 'sampler') {
                         pad.textContent = "CHOP " + (i + 1);
-                        if (state.sampler.chops.find(c => c.pad === i)) {
+                        if (inst.chops && inst.chops.find(c => c.pad === i)) {
                             pad.classList.add('has-sample');
+                        }
+                    } else if (inst.type === 'audiotrack') {
+                        if (i === 0) {
+                            pad.textContent = inst.recordedBuffer ? '▶ PLAY' : '⏺ RECORD';
+                            if (inst.recordedBuffer) pad.classList.add('has-sample');
+                        } else {
+                            pad.textContent = '-';
+                            pad.style.opacity = '0.2';
                         }
                     } else if (inst.type === 'library') {
                         const padName = inst.padNames[i];
@@ -1104,7 +1192,12 @@
                     playMetronomeClick();
                 }
             } else if (inst.type === 'sampler') {
-                playChop(padIndex, inst.tuning || 0, destination);
+                playChopFromInst(inst, padIndex, inst.tuning || 0, destination);
+            } else if (inst.type === 'audiotrack') {
+                if (padIndex === 0) {
+                    openAudioTrackModal(inst.id);
+                }
+                return; // no note recording for audiotrack pad taps
             } else if (inst.type === 'library') {
                 playLibrarySample(inst, padIndex);
             } else {
@@ -1271,7 +1364,9 @@
                     playMetronomeClick();
                 }
             } else if (inst.type === 'sampler') {
-                playChop(padIndex, inst.tuning || 0, destination);
+                playChopFromInst(inst, padIndex, inst.tuning || 0, destination);
+            } else if (inst.type === 'audiotrack') {
+                playAudioTrackBuffer(inst, destination);
             } else if (inst.type === 'library') {
                 playLibrarySample(inst, padIndex);
             } else {
@@ -1656,16 +1751,30 @@
         let samplerAnalyser = null;
         let samplerAnimationId = null;
 
+        // Returns the active sampler instrument in the current sequence (for sampler tab)
+        function getActiveSamplerInst() {
+            // Find the first sampler instrument that's active, or first sampler
+            const seq = state.sequences[state.currentSequence];
+            let inst = seq.instruments.find(i => i.id === state.activeInstrumentId && i.type === 'sampler');
+            if (!inst) inst = seq.instruments.find(i => i.type === 'sampler');
+            return inst;
+        }
+
         async function toggleSamplerRec() {
             initAudio();
             if (state.sampler.isRecording) {
                 stopSamplerRecording();
             } else {
-                await startSamplerRecording();
+                const inst = getActiveSamplerInst();
+                if (!inst) {
+                    alert("No sampler instrument selected. Add a SAMPLER instrument in the Sequence tab first.");
+                    return;
+                }
+                await startSamplerRecording(inst);
             }
         }
 
-        async function startSamplerRecording() {
+        async function startSamplerRecording(inst) {
             try {
                 samplerStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 samplerMediaRecorder = new MediaRecorder(samplerStream);
@@ -1676,17 +1785,19 @@
                 };
 
                 samplerMediaRecorder.onstop = async () => {
-                    const blob = new Blob(samplerAudioChunks, { type: 'audio/wav' });
+                    const blob = new Blob(samplerAudioChunks, { type: 'audio/webm' });
                     const arrayBuffer = await blob.arrayBuffer();
-                    state.sampler.recordedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                    inst.recordedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                    inst.chops = inst.chops || [];
                     drawWaveform();
                     updateSamplerLCD("RECORDING FINISHED");
                 };
 
                 samplerMediaRecorder.start();
                 state.sampler.isRecording = true;
+                state.sampler.currentInstId = inst.id;
                 state.sampler.recordingStartTime = audioCtx.currentTime;
-                state.sampler.chops = [];
+                inst.chops = [];
                 
                 document.getElementById('sampler-rec-btn').classList.add('recording');
                 document.getElementById('sampler-vinyl').classList.add('rotating');
@@ -1740,10 +1851,11 @@
         function renderSamplerPads() {
             const grid = document.getElementById('sampler-pad-grid');
             grid.innerHTML = '';
+            const inst = getActiveSamplerInst();
             for (let i = 0; i < 16; i++) {
                 const pad = document.createElement('div');
                 pad.className = 'pad';
-                if (state.sampler.chops.find(c => c.pad === i)) {
+                if (inst && inst.chops && inst.chops.find(c => c.pad === i)) {
                     pad.classList.add('has-sample');
                 }
                 pad.dataset.pad = i;
@@ -1759,8 +1871,9 @@
         }
 
         function startChop(padIndex) {
+            const inst = getActiveSamplerInst();
             if (!state.sampler.isRecording) {
-                playChop(padIndex);
+                if (inst) playChopFromInst(inst, padIndex);
                 return;
             }
             state.sampler.activeChop = {
@@ -1774,9 +1887,12 @@
         function endChop(padIndex) {
             if (!state.sampler.isRecording || !state.sampler.activeChop || state.sampler.activeChop.pad !== padIndex) return;
             
+            const inst = getActiveSamplerInst();
+            if (!inst) return;
+
             const endTime = audioCtx.currentTime - state.sampler.recordingStartTime;
-            state.sampler.chops = state.sampler.chops.filter(c => c.pad !== padIndex);
-            state.sampler.chops.push({
+            inst.chops = (inst.chops || []).filter(c => c.pad !== padIndex);
+            inst.chops.push({
                 pad: padIndex,
                 start: state.sampler.activeChop.start,
                 end: endTime
@@ -1789,20 +1905,28 @@
             drawWaveform();
         }
 
-        function playChop(padIndex, tuning = 0, destination = null) {
-            if (!state.sampler.recordedBuffer) return;
-            const chop = state.sampler.chops.find(c => c.pad === padIndex);
+        // Play a chop from an instrument's own buffer
+        function playChopFromInst(inst, padIndex, tuning = 0, destination = null) {
+            if (!inst || !inst.recordedBuffer) return;
+            const chop = (inst.chops || []).find(c => c.pad === padIndex);
             if (!chop) return;
 
             const source = audioCtx.createBufferSource();
-            source.buffer = state.sampler.recordedBuffer;
-            
-            // Tuning: 1 semitone = 2^(1/12)
-            source.playbackRate.value = Math.pow(2, tuning / 12);
-            
-            const dest = destination || masterGain;
+            source.buffer = inst.recordedBuffer;
+            source.playbackRate.value = Math.pow(2, (tuning || 0) / 12);
+            const dest = destination || (inst.eqNodes ? inst.eqNodes.low : masterGain);
             source.connect(dest);
             source.start(0, chop.start, chop.end - chop.start);
+        }
+
+        // Play the full audio track buffer (for audiotrack type instruments)
+        function playAudioTrackBuffer(inst, destination = null) {
+            if (!inst || !inst.recordedBuffer) return;
+            const source = audioCtx.createBufferSource();
+            source.buffer = inst.recordedBuffer;
+            const dest = destination || (inst.eqNodes ? inst.eqNodes.low : masterGain);
+            source.connect(dest);
+            source.start(0);
         }
 
         function drawWaveform() {
@@ -1814,9 +1938,10 @@
             ctx.fillStyle = '#222';
             ctx.fillRect(0, 0, width, height);
 
-            if (!state.sampler.recordedBuffer) return;
+            const inst = getActiveSamplerInst();
+            if (!inst || !inst.recordedBuffer) return;
 
-            const data = state.sampler.recordedBuffer.getChannelData(0);
+            const data = inst.recordedBuffer.getChannelData(0);
             const step = Math.ceil(data.length / width);
             const amp = height / 2;
 
@@ -1838,9 +1963,9 @@
             ctx.stroke();
 
             // Draw chops
-            state.sampler.chops.forEach(chop => {
-                const x1 = (chop.start / state.sampler.recordedBuffer.duration) * width;
-                const x2 = (chop.end / state.sampler.recordedBuffer.duration) * width;
+            (inst.chops || []).forEach(chop => {
+                const x1 = (chop.start / inst.recordedBuffer.duration) * width;
+                const x2 = (chop.end / inst.recordedBuffer.duration) * width;
                 ctx.fillStyle = 'rgba(242, 92, 25, 0.3)';
                 ctx.fillRect(x1, 0, x2 - x1, height);
                 ctx.strokeStyle = '#fff';
@@ -1850,6 +1975,187 @@
                 ctx.fillText(chop.pad + 1, x1 + 2, 12);
             });
         }
+
+        // =============================================
+        // AUDIO TRACK LOGIC
+        // =============================================
+        let audioTrackMediaRecorder = null;
+        let audioTrackChunks = [];
+        let audioTrackStream = null;
+        let audioTrackAnalyser = null;
+        let audioTrackAnimId = null;
+        let audioTrackCurrentInstId = null;
+
+        function addAudioTrack() {
+            closeModal('add-instrument-modal');
+            initAudio();
+
+            const seq = state.sequences[state.currentSequence];
+            const id = ++instrumentIdCounter;
+
+            const instrument = {
+                id: id,
+                type: 'audiotrack',
+                name: `AUDIO ${id}`,
+                muted: false,
+                solo: false,
+                eq: { low: 0, mid: 0, high: 0, volume: 80 },
+                gainNode: null,
+                eqNodes: null,
+                recordedBuffer: null,
+                audioBlob: null
+            };
+
+            if (audioCtx) setupInstrumentAudio(instrument);
+
+            seq.instruments.push(instrument);
+            seq.notes[id] = [{ beat: 0, pad: 0 }]; // default: play at beat 0
+
+            state.activeInstrumentId = id;
+            renderInstruments();
+            renderPads();
+
+            // Open record modal
+            openAudioTrackModal(id);
+        }
+
+        function openAudioTrackModal(instId) {
+            const seq = state.sequences[state.currentSequence];
+            const inst = seq.instruments.find(i => i.id === instId);
+            if (!inst) return;
+            audioTrackCurrentInstId = instId;
+            document.getElementById('audiotrack-modal-name').textContent = inst.name;
+            document.getElementById('audiotrack-status').textContent = inst.recordedBuffer ? 'Recording ready. Re-record or play.' : 'Ready to record';
+            document.getElementById('audiotrack-rec-btn').textContent = '⏺ RECORD';
+            document.getElementById('audiotrack-rec-btn').classList.remove('recording');
+            document.getElementById('audiotrack-play-btn').disabled = !inst.recordedBuffer;
+            drawAudioTrackWaveform(inst);
+            document.getElementById('audiotrack-modal').classList.add('active');
+        }
+
+        async function toggleAudioTrackRecord() {
+            if (audioTrackMediaRecorder && audioTrackMediaRecorder.state === 'recording') {
+                stopAudioTrackRecord();
+            } else {
+                await startAudioTrackRecord();
+            }
+        }
+
+        async function startAudioTrackRecord() {
+            initAudio();
+            try {
+                audioTrackStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioTrackMediaRecorder = new MediaRecorder(audioTrackStream);
+                audioTrackChunks = [];
+
+                audioTrackMediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) audioTrackChunks.push(e.data);
+                };
+
+                audioTrackMediaRecorder.onstop = async () => {
+                    const seq = state.sequences[state.currentSequence];
+                    const inst = seq.instruments.find(i => i.id === audioTrackCurrentInstId);
+                    if (!inst) return;
+
+                    const blob = new Blob(audioTrackChunks, { type: 'audio/webm' });
+                    inst.audioBlob = blob; // keep for save
+                    const arrayBuffer = await blob.arrayBuffer();
+                    inst.recordedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+                    document.getElementById('audiotrack-status').textContent = 'Recording done!';
+                    document.getElementById('audiotrack-play-btn').disabled = false;
+                    drawAudioTrackWaveform(inst);
+                    renderPads();
+                    renderNotesOnPianoRoll();
+                };
+
+                audioTrackMediaRecorder.start();
+                document.getElementById('audiotrack-rec-btn').textContent = '⏹ STOP';
+                document.getElementById('audiotrack-rec-btn').classList.add('recording');
+                document.getElementById('audiotrack-status').textContent = 'Recording...';
+
+                // VU meter
+                const src = audioCtx.createMediaStreamSource(audioTrackStream);
+                audioTrackAnalyser = audioCtx.createAnalyser();
+                audioTrackAnalyser.fftSize = 256;
+                src.connect(audioTrackAnalyser);
+                updateAudioTrackVU();
+
+                // Max 60 seconds
+                setTimeout(() => {
+                    if (audioTrackMediaRecorder && audioTrackMediaRecorder.state === 'recording') stopAudioTrackRecord();
+                }, 60000);
+
+            } catch (err) {
+                alert("Could not access microphone.");
+            }
+        }
+
+        function stopAudioTrackRecord() {
+            if (audioTrackMediaRecorder && audioTrackMediaRecorder.state === 'recording') {
+                audioTrackMediaRecorder.stop();
+                audioTrackStream.getTracks().forEach(t => t.stop());
+                cancelAnimationFrame(audioTrackAnimId);
+                document.getElementById('audiotrack-vu-bar').style.width = '0%';
+                document.getElementById('audiotrack-rec-btn').textContent = '⏺ RECORD';
+                document.getElementById('audiotrack-rec-btn').classList.remove('recording');
+            }
+        }
+
+        function updateAudioTrackVU() {
+            if (!audioTrackAnalyser) return;
+            const data = new Uint8Array(audioTrackAnalyser.frequencyBinCount);
+            audioTrackAnalyser.getByteFrequencyData(data);
+            const avg = data.reduce((a, b) => a + b) / data.length;
+            document.getElementById('audiotrack-vu-bar').style.width = Math.min(100, (avg / 128) * 100) + '%';
+            if (audioTrackMediaRecorder && audioTrackMediaRecorder.state === 'recording') {
+                audioTrackAnimId = requestAnimationFrame(updateAudioTrackVU);
+            }
+        }
+
+        function playAudioTrackPreview() {
+            const seq = state.sequences[state.currentSequence];
+            const inst = seq.instruments.find(i => i.id === audioTrackCurrentInstId);
+            if (!inst || !inst.recordedBuffer) return;
+            initAudio();
+            playAudioTrackBuffer(inst);
+        }
+
+        function drawAudioTrackWaveform(inst) {
+            const canvas = document.getElementById('audiotrack-waveform');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width = canvas.offsetWidth || 300;
+            const height = canvas.height = 60;
+
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, width, height);
+
+            if (!inst || !inst.recordedBuffer) return;
+
+            const data = inst.recordedBuffer.getChannelData(0);
+            const step = Math.ceil(data.length / width);
+            const amp = height / 2;
+
+            ctx.strokeStyle = '#4fc';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, amp);
+
+            for (let i = 0; i < width; i++) {
+                let min = 1.0, max = -1.0;
+                for (let j = 0; j < step; j++) {
+                    const d = data[(i * step) + j] || 0;
+                    if (d < min) min = d;
+                    if (d > max) max = d;
+                }
+                ctx.lineTo(i, (1 + min) * amp);
+                ctx.lineTo(i, (1 + max) * amp);
+            }
+            ctx.stroke();
+        }
+
+
 
         function varColor(name) {
             return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -2123,17 +2429,45 @@
         // =============================================
         // SAVE / OPEN PROJECT  (JSON via file download/upload)
         // =============================================
-        function menuSave() {
-            // Serialize state - exclude audio nodes (not serializable)
-            const saveData = {
-                version: 1,
-                bpm: state.bpm,
-                currentSequence: state.currentSequence,
-                sequences: state.sequences.map(seq => ({
-                    name: seq.name,
-                    length: seq.length,
-                    notes: seq.notes,
-                    instruments: seq.instruments.map(inst => ({
+        async function menuSave() {
+            // Helper: encode AudioBuffer to base64 WAV string
+            async function bufferToBase64(buffer) {
+                if (!buffer) return null;
+                const numCh = buffer.numberOfChannels;
+                const sr = buffer.sampleRate;
+                const len = buffer.length;
+                const bps = 2;
+                const interleaved = new Int16Array(len * numCh);
+                for (let ch = 0; ch < numCh; ch++) {
+                    const d = buffer.getChannelData(ch);
+                    for (let i = 0; i < len; i++) {
+                        const s = Math.max(-1, Math.min(1, d[i]));
+                        interleaved[i * numCh + ch] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                }
+                const dataSize = interleaved.byteLength;
+                const wavBuf = new ArrayBuffer(44 + dataSize);
+                const v = new DataView(wavBuf);
+                function ws(o, s) { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); }
+                ws(0,'RIFF'); v.setUint32(4, 36+dataSize, true); ws(8,'WAVE');
+                ws(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true);
+                v.setUint16(22,numCh,true); v.setUint32(24,sr,true);
+                v.setUint32(28,sr*numCh*bps,true); v.setUint16(32,numCh*bps,true);
+                v.setUint16(34,16,true); ws(36,'data'); v.setUint32(40,dataSize,true);
+                new Int16Array(wavBuf, 44).set(interleaved);
+                const bytes = new Uint8Array(wavBuf);
+                let bin = '';
+                for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+                return btoa(bin);
+            }
+
+            // Serialize instruments with audio data
+            const sequences = await Promise.all(state.sequences.map(async seq => ({
+                name: seq.name,
+                length: seq.length,
+                notes: seq.notes,
+                instruments: await Promise.all(seq.instruments.map(async inst => {
+                    const data = {
                         id: inst.id,
                         type: inst.type,
                         name: inst.name,
@@ -2141,13 +2475,25 @@
                         solo: inst.solo,
                         eq: inst.eq,
                         tuning: inst.tuning,
-                        // library instrument data
                         bankName: inst.bankName || null,
                         padNames: inst.padNames || null,
-                        // sampler chops ref
-                        samplerChops: inst.type === 'sampler' ? state.sampler.chops : null
-                    }))
-                })),
+                    };
+                    if (inst.type === 'sampler') {
+                        data.samplerChops = inst.chops || [];
+                        data.samplerAudioB64 = await bufferToBase64(inst.recordedBuffer);
+                    }
+                    if (inst.type === 'audiotrack') {
+                        data.audioTrackB64 = await bufferToBase64(inst.recordedBuffer);
+                    }
+                    return data;
+                }))
+            })));
+
+            const saveData = {
+                version: 2,
+                bpm: state.bpm,
+                currentSequence: state.currentSequence,
+                sequences,
                 songArrangement: state.songArrangement,
                 instrumentIdCounter: instrumentIdCounter
             };
@@ -2193,6 +2539,20 @@
         function loadProjectData(data) {
             if (!data.version) return;
 
+            // Helper: decode base64 WAV to AudioBuffer
+            async function base64ToBuffer(b64) {
+                if (!b64 || !audioCtx) return null;
+                try {
+                    const bin = atob(b64);
+                    const bytes = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                    return await audioCtx.decodeAudioData(bytes.buffer);
+                } catch(e) {
+                    console.warn('Could not decode audio buffer:', e);
+                    return null;
+                }
+            }
+
             // Restore BPM
             state.bpm = data.bpm || 120;
             document.getElementById('bpm-input').value = state.bpm;
@@ -2200,7 +2560,10 @@
             // Restore instrument counter
             instrumentIdCounter = data.instrumentIdCounter || 0;
 
-            // Restore sequences
+            // Re-init audio nodes first
+            initAudio();
+
+            // Restore sequences (sync part)
             state.sequences = data.sequences.map(seq => {
                 const instruments = seq.instruments.map(instData => {
                     const inst = {
@@ -2221,6 +2584,31 @@
                         inst.samples   = SOUND_BANK_DATA[instData.bankName];
                         inst.padNames  = instData.padNames || Object.keys(inst.samples);
                         inst.audioBuffers = {};
+                    }
+
+                    // Sampler: restore chops and buffer (async, set placeholder)
+                    if (inst.type === 'sampler') {
+                        inst.chops = instData.samplerChops || [];
+                        inst.recordedBuffer = null;
+                        if (instData.samplerAudioB64) {
+                            base64ToBuffer(instData.samplerAudioB64).then(buf => {
+                                inst.recordedBuffer = buf;
+                                renderNotesOnPianoRoll();
+                                drawWaveform();
+                            });
+                        }
+                    }
+
+                    // Audio Track: restore buffer
+                    if (inst.type === 'audiotrack') {
+                        inst.recordedBuffer = null;
+                        if (instData.audioTrackB64) {
+                            base64ToBuffer(instData.audioTrackB64).then(buf => {
+                                inst.recordedBuffer = buf;
+                                renderNotesOnPianoRoll();
+                                renderPads();
+                            });
+                        }
                     }
 
                     return inst;
@@ -2248,8 +2636,6 @@
             select.value = state.currentSequence;
             state.songArrangement = data.songArrangement || [];
 
-            // Re-init audio nodes
-            initAudio();
             state.sequences.forEach(seq => {
                 seq.instruments.forEach(inst => setupInstrumentAudio(inst));
             });
