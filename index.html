@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, orientation=landscape">
-    <title>PROJECT.OI - Mobile DAW</title>
+    <title>cronki - sampler DAW</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,10 +12,31 @@
     <div id="opening-screen">
         <div class="opening-content">
             <img src="images/opening.png" alt="Cronki" class="opening-logo">
-            <div class="opening-version">Beta Version 1.0</div>
+            <div class="opening-version">Beta Version 1.1</div>
+
+            <!-- Permission Status Panel -->
+            <div class="opening-permissions" id="opening-permissions">
+                <div class="perm-item" id="perm-mic">
+                    <span class="perm-icon">🎙️</span>
+                    <span class="perm-label">Microphone</span>
+                    <span class="perm-status" id="perm-mic-status">Checking...</span>
+                </div>
+                <div class="perm-item" id="perm-audio">
+                    <span class="perm-icon">🔊</span>
+                    <span class="perm-label">Audio Output</span>
+                    <span class="perm-status" id="perm-audio-status">Checking...</span>
+                </div>
+                <div class="perm-item" id="perm-midi">
+                    <span class="perm-icon">🎹</span>
+                    <span class="perm-label">MIDI</span>
+                    <span class="perm-status" id="perm-midi-status">Tap to connect</span>
+                    <button class="perm-connect-btn" id="perm-midi-btn" onclick="requestOpeningMidi()">CONNECT</button>
+                </div>
+            </div>
+
             <button class="opening-start-btn" onclick="startEngine()">▶ START ENGINE</button>
             <div class="opening-tips">
-                💡 Tip: Tap SAMPLER to record, then add to your SEQUENCE
+                💡 Tip: In the Sampler, press Record, then hold down the pads to chop your sound. You can use the chopped pads in the Sequence tab by adding a Sampler.In the Sequence section, create as many sequences as you like with unlimited instruments. In Song Mode, arrange and reorder your sequences however you want. Finally, go to the Tape section. Press Record, and let Cronki’s magical lo-fi sound shape your track. When recording is finished, click on it to download your song as a WAV file to your device.
             </div>
         </div>
     </div>
@@ -24,7 +45,7 @@
         <header>
             <div style="display: flex; align-items: center;">
                 <img src="images/logo.png" alt="Logo" style="width: 99.5px; height: auto;">
-                <span style="font-size:10px; opacity:0.7; margin-left: 10px;">sampler&grooveapp v1.0</span>
+                <span style="font-size:10px; opacity:0.7; margin-left: 10px;">sampler&grooveapp v1.1</span>
             </div>
             <div class="header-controls">
                 <div class="bpm-control">
@@ -114,9 +135,7 @@
             <div id="sampler-view" class="view">
                 <div class="track-column">
                     <div class="vinyl-container">
-                        <div class="vinyl" id="sampler-vinyl">
-                            <div class="vinyl-label"></div>
-                        </div>
+                        <img src="images/samplerVinyl.png" id="sampler-vinyl" class="sampler-vinyl-img" alt="vinyl">
                         <div class="sampler-vu-container">
                             <div class="vu-meter">
                                 <div class="vu-bar" id="sampler-vu-bar" style="height: 0%;"></div>
@@ -144,60 +163,67 @@
 
             <!-- TAPE VIEW -->
             <div id="tape-view" class="view">
-                <div class="tape-deck">
-                    <!-- VU Meters -->
-                    <div class="vu-meter-container">
-                        <div class="vu-meter">
-                            <div class="vu-meter-label">L</div>
-                            <div class="vu-bar left" id="vu-left" style="height: 5px;"></div>
+                <div class="tape-main-row">
+                    <!-- Left: VU + Reels -->
+                    <div class="tape-deck">
+                        <div class="tape-deck-inner">
+                            <div class="vu-meter-container">
+                                <div class="vu-meter">
+                                    <div class="vu-meter-label">L</div>
+                                    <div class="vu-bar left" id="vu-left" style="height: 5px;"></div>
+                                </div>
+                                <div class="vu-meter">
+                                    <div class="vu-meter-label">R</div>
+                                    <div class="vu-bar right" id="vu-right" style="height: 5px;"></div>
+                                </div>
+                            </div>
+
+                            <div class="tape-reels-row">
+                                <div class="tape-reel-wrap" id="tape-wrap-a">
+                                    <img src="images/tapeA.png" id="tape-reel-a" class="tape-reel-img" alt="Tape A">
+                                </div>
+                                <div class="tape-reel-wrap tape-wrap-b" id="tape-wrap-b">
+                                    <img src="images/tapeB.png" id="tape-reel-b" class="tape-reel-img" alt="Tape B">
+                                </div>
+                            </div>
                         </div>
-                        <div class="vu-meter">
-                            <div class="vu-meter-label">R</div>
-                            <div class="vu-bar right" id="vu-right" style="height: 5px;"></div>
-                        </div>
+
+                        <div class="tape-status" id="tape-status">● READY</div>
                     </div>
 
-                    <div class="cassette">
-                        <div class="cassette-label" id="cassette-label">MASTER TAPE</div>
-                        <div class="spool" id="spool1"></div>
-                        <div class="cassette-window">
-                            <div class="tape-reel"></div>
+                    <!-- Right: XY Pad + Buttons -->
+                    <div class="tape-controls-col">
+                        <div class="xy-pad-wrapper">
+                            <div class="xy-pad" id="xy-pad">
+                                <div class="xy-pad-label xy-label-x">FILTER</div>
+                                <div class="xy-pad-label xy-label-y">REVERB</div>
+                                <div class="xy-cursor" id="xy-cursor"></div>
+                            </div>
                         </div>
-                        <div class="spool" id="spool2"></div>
+                        <div class="deck-controls">
+                            <button class="deck-btn" onclick="rewindTape()">
+                                <div class="icon-rew"></div>
+                                <span>REW</span>
+                            </button>
+                            <button class="deck-btn" onclick="stopTape()">
+                                <div class="icon-stop" style="width:10px;height:10px;background:white;"></div>
+                                <span>STOP</span>
+                            </button>
+                            <button class="deck-btn play" id="tape-play-btn" onclick="playTape()">
+                                <div class="icon-play"></div>
+                                <span>PLAY</span>
+                            </button>
+                            <button class="deck-btn rec" id="tape-rec-btn" onclick="recTape()">
+                                <div class="icon-rec"></div>
+                                <span>REC</span>
+                            </button>
+                            <button class="deck-btn save-song-btn" id="save-song-btn" onclick="getSong()" style="display:none;">
+                                <span style="font-size:16px;">🎵</span>
+                                <span>SAVE</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
-
-                <div class="deck-controls">
-                    <div class="xy-pad-wrapper">
-                        <div class="xy-pad" id="xy-pad">
-                            <div class="xy-pad-label xy-label-x">FILTER</div>
-                            <div class="xy-pad-label xy-label-y">REVERB</div>
-                            <div class="xy-cursor" id="xy-cursor"></div>
-                        </div>
-                    </div>
-                    <button class="deck-btn" onclick="rewindTape()">
-                        <div class="icon-rew"></div>
-                        <span>REW</span>
-                    </button>
-                    <button class="deck-btn" onclick="stopTape()">
-                        <div class="icon-stop" style="width:10px;height:10px;background:white;"></div>
-                        <span>STOP</span>
-                    </button>
-                    <button class="deck-btn play" id="tape-play-btn" onclick="playTape()">
-                        <div class="icon-play"></div>
-                        <span>PLAY</span>
-                    </button>
-                    <button class="deck-btn rec" id="tape-rec-btn" onclick="recTape()">
-                        <div class="icon-rec"></div>
-                        <span>REC</span>
-                    </button>
-                    <button class="deck-btn save-song-btn" id="save-song-btn" onclick="getSong()" style="display:none;">
-                        <span style="font-size:16px;">🎵</span>
-                        <span>SAVE</span>
-                    </button>
-                </div>
-
-                <div class="tape-status" id="tape-status">● READY</div>
             </div>
         </main>
 
@@ -231,6 +257,7 @@
             <div class="modal-title">SELECT INSTRUMENT TYPE</div>
             <button class="modal-btn" onclick="addInstrument('drums')">🥁 SYNTH DRUM</button>
             <button class="modal-btn" onclick="addInstrument('keys')">🎹 SYNTH KEYS</button>
+            <button class="modal-btn" onclick="addInstrument('lofi')">🌫️ LO-FI SYNTH</button>
             <button class="modal-btn" onclick="addInstrument('sampler')">🎙️ SAMPLER</button>
             <button class="modal-btn" onclick="openSoundLibrary()">📂 REALISTIC SOUND LIBRARY</button>
             <button class="modal-btn" onclick="addAudioTrack()">🎤 AUDIO TRACK</button>
@@ -371,6 +398,12 @@
 
     <script src="vinylFXData.js"></script>
     <script src="soundBankData.js"></script>
+    <!-- Core modules (load order matters: state → audio → synth → recorder → transport → ui) -->
     <script src="script.js"></script>
+    <script src="audioCore.js"></script>
+    <script src="synthEngine.js"></script>
+    <script src="recorder.js"></script>
+    <script src="transport.js"></script>
+    <script src="ui.js"></script>
 </body>
 </html>
